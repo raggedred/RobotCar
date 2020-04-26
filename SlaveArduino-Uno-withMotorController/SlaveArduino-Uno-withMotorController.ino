@@ -1,16 +1,23 @@
 #include <Wire.h>
 #include <Servo.h>    //Standard Servo Library
 #include <AFMotor.h>  //Adafruit Motor Shield Library
+#include <SparkFun_MAG3110.h>
+#include <ArduinoJson.h>
 
+//-----------Motors Setup----------------------------
 AF_DCMotor leftRear(3,MOTOR34_8KHZ);
 AF_DCMotor rightRear(4,MOTOR34_8KHZ);
-
 int speed = 255;//0 to 255
 int speedSet = 0;
 #define MAX_SPEED 255 // sets speed of DC  motors
 boolean goesForward=false;
 boolean eventRecieved = false;
 
+//-----------Magnetometer Setup----------------------------
+MAG3110 mag = MAG3110(); //Instantiate MAG3110
+int x, y, z;
+
+//-----------Ultrasonic and Servos Setup----------------------------
 Servo servo, servo2;   
 #define UECHO A0 //ECHO pin is input
 #define UTRIG A1 //TRIG pin is output
@@ -21,6 +28,10 @@ long distanceR = 0;
 long distanceL = 0;
 
 int i = 0, action, duration;
+
+//-----------Scanning Data Json  Setup----------------------------
+const size_t capacity = JSON_ARRAY_SIZE(60) + JSON_OBJECT_SIZE(3);
+DynamicJsonDocument doc(capacity);
 
 void setup()
 {
@@ -40,14 +51,32 @@ void setup()
   pinMode(UECHO, INPUT);        //ECHO pin is input
   pinMode(UTRIG, OUTPUT);       //TRIG pin is output
     
-  initialise();   //Run the Initialise function
-  
+  doc["carId"] = "Robot 1";
+
+  mag.initialize(); //Initialize the MAG3110
+
+  //initialise();   //Run the Initialise function
   Serial.print("Ready: ");
 }
  
 void loop()
 {
-
+  if (Serial.available()){
+      int a = Serial.read();
+      Serial.println(a);
+      if (a == 53)
+      {
+          doc["time"] = 1351824120;
+          
+          scan();
+          
+          String dataSending;
+          
+          serializeJson(doc, dataSending);
+          wiresend(dataSending);
+      }
+  }
+    
   long sonarDistance = sonarPing();  //Get the distance in millimeters
   
   //Serial.print("Distance Reading: ");
@@ -103,6 +132,20 @@ void drive(int direction){
           Serial.println("Look Centre: ");
           lookCenter();
         break;
+        
+        case 8:
+          Serial.println("180* Scan: ");
+          
+          doc["time"] = 1351824120;
+          
+          scan();
+          
+          String dataSending;
+          
+          serializeJson(doc,dataSending);
+          
+          wiresend(dataSending);
+        break;
 
   }
   
@@ -110,12 +153,48 @@ void drive(int direction){
 
 void receiveEvent(int howMany)
 {
-
   action = Wire.read();    // receive byte as an integer
-
   eventRecieved = true;
 }
 
+void wiresend(String lastJSON)
+{
+ int bt = Wire.write(lastJSON.c_str());
+ Serial.println(lastJSON);
+ Serial.print("Send bytes: ");
+ Serial.println(bt);
+
+}
+
+
+void scan()
+{  
+   int scan;
+   
+   servo.write(20);
+   JsonArray Degrees_Dist = doc.createNestedArray("Degrees-Dist");
+   
+   Serial.println("Scanning: ");
+   delay(1000);
+   for ( i=20;i<=80;i++){
+       delay(100);
+      
+       servo.write(i);      //Set Servo 1 to 0 Degrees
+       
+       delay(100);
+       
+       scan = sonarPing();
+       
+       delay(100);
+       
+       Serial.print("i: ");Serial.print(i);Serial.print(" Dist: ");Serial.println(scan);
+       
+       Degrees_Dist.add(scan);
+
+   }
+
+   servo.write(90);
+}
 
 long lookLeft()
 {
